@@ -1,0 +1,11 @@
+{
+  "name": "bookmark-dupes",
+  "version": "0.1.0",
+  "description": "Find duplicate URLs in a browser bookmarks export",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6.0"
+  }
+}
