@@ -29,15 +29,21 @@ node src/cli.ts ~/Downloads/bookmarks.html
 scanned 842 bookmarks
 3 URLs bookmarked more than once:
 
-https://news.ycombinator.com  (2x)
-  - "Hacker News" in Tech
-  - "HN" in (root)
+http://news.ycombinator.com  (2x)
+  - "Hacker News" in Tech (https://news.ycombinator.com)
+  - "HN" in (root) (https://news.ycombinator.com/)
 
-https://example.com/docs  (3x)
-  - "Docs" in Work/Reference
-  - "Example Docs" in Work/Reference/Old
-  - "docs" in (root)
+http://example.com/docs  (3x)
+  - "Docs" in Work/Reference (https://example.com/docs)
+  - "Example Docs" in Work/Reference/Old (https://example.com/docs/?utm_source=newsletter)
+  - "docs" in (root) (http://example.com/docs)
 ```
+
+URLs are compared after normalizing: `http` and `https` are treated as the
+same scheme, a trailing slash on the path is ignored, and known tracking
+query params (`utm_*`, `gclid`, `fbclid`, and similar) are stripped before
+comparing. The group heading shows the normalized form; each entry below it
+shows the URL exactly as it appears in the export.
 
 ### JSON output
 
@@ -51,12 +57,12 @@ node src/cli.ts ~/Downloads/bookmarks.html --json
   "duplicateUrlCount": 3,
   "duplicates": [
     {
-      "url": "https://example.com/docs",
+      "url": "http://example.com/docs",
       "count": 3,
       "entries": [
-        { "title": "Docs", "folder": "Work/Reference" },
-        { "title": "Example Docs", "folder": "Work/Reference/Old" },
-        { "title": "docs", "folder": "(root)" }
+        { "title": "Docs", "folder": "Work/Reference", "url": "https://example.com/docs" },
+        { "title": "Example Docs", "folder": "Work/Reference/Old", "url": "https://example.com/docs/?utm_source=newsletter" },
+        { "title": "docs", "folder": "(root)", "url": "http://example.com/docs" }
       ]
     }
   ]
@@ -87,8 +93,9 @@ which is more honest about how loose the format actually is.
 
 ## What this does not do (yet)
 
-- No de-duplication by normalized URL (trailing slash, `http` vs `https`,
-  tracking params). Right now a duplicate is an exact string match.
 - No output format for removing the duplicates automatically.
+- No near-duplicate detection by title similarity (same page, different URL
+  entirely - a redirect, a URL shortener, a different query string that
+  isn't a known tracking param).
 
 See the license for warranty (there isn't one).

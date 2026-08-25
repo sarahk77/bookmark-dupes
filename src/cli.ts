@@ -1,28 +1,30 @@
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
 import { parseBookmarksHtml, type BookmarkEntry } from "./parser.js";
+import { normalizeUrl } from "./normalize.js";
 
 interface DuplicateGroup {
   url: string;
   count: number;
-  entries: { title: string; folder: string }[];
+  entries: { title: string; folder: string; url: string }[];
 }
 
 function findDuplicateUrls(entries: BookmarkEntry[]): DuplicateGroup[] {
-  const byUrl = new Map<string, BookmarkEntry[]>();
+  const byNormalizedUrl = new Map<string, BookmarkEntry[]>();
   for (const entry of entries) {
-    const list = byUrl.get(entry.url);
+    const key = normalizeUrl(entry.url);
+    const list = byNormalizedUrl.get(key);
     if (list) list.push(entry);
-    else byUrl.set(entry.url, [entry]);
+    else byNormalizedUrl.set(key, [entry]);
   }
 
   const groups: DuplicateGroup[] = [];
-  for (const [url, list] of byUrl) {
+  for (const [url, list] of byNormalizedUrl) {
     if (list.length < 2) continue;
     groups.push({
       url,
       count: list.length,
-      entries: list.map((e) => ({ title: e.title, folder: e.folder || "(root)" })),
+      entries: list.map((e) => ({ title: e.title, folder: e.folder || "(root)", url: e.url })),
     });
   }
 
@@ -42,7 +44,7 @@ function printHuman(total: number, duplicates: DuplicateGroup[]): void {
   for (const group of duplicates) {
     console.log(`${group.url}  (${group.count}x)`);
     for (const entry of group.entries) {
-      console.log(`  - "${entry.title}" in ${entry.folder}`);
+      console.log(`  - "${entry.title}" in ${entry.folder} (${entry.url})`);
     }
     console.log("");
   }
