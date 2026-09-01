@@ -73,6 +73,27 @@ The JSON mode is meant to be piped into something else - `jq`, a script that
 deletes the older duplicates, whatever. It's a straight mirror of the human
 output, no extra or missing fields.
 
+### Removing the duplicates
+
+```
+node src/cli.ts ~/Downloads/bookmarks.html --fix cleaned.html
+```
+
+```
+scanned 842 bookmarks
+removed 4 duplicate entries, wrote 838 bookmarks to cleaned.html
+```
+
+For each URL that shows up more than once, this keeps the entry that appears
+first in the file and drops the rest, then writes the result to the given
+path. It never touches the input file - `--fix` refuses to write to the same
+path it read from. Everything else about the file (folders, other bookmarks,
+formatting) is left as-is: this edits the original HTML text by cutting out
+the removed entries rather than regenerating the file from scratch, so icons,
+add dates, and any browser-specific attributes on the surviving entries come
+through untouched. `--fix` combined with `--json` prints the usual report
+plus `fixedFile` and `removedCount`.
+
 ## Requirements
 
 Node 22.6 or later, run with type stripping enabled (Node 23.6+ has this on
@@ -93,9 +114,10 @@ which is more honest about how loose the format actually is.
 
 ## What this does not do (yet)
 
-- No output format for removing the duplicates automatically.
 - No near-duplicate detection by title similarity (same page, different URL
   entirely - a redirect, a URL shortener, a different query string that
   isn't a known tracking param).
+- No way to choose which duplicate to keep other than "first in the file";
+  no option to prefer the one with the more specific folder, say.
 
 See the license for warranty (there isn't one).

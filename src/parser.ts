@@ -3,6 +3,10 @@ export interface BookmarkEntry {
   url: string;
   folder: string;
   addDate?: number;
+  // Position of this entry's <DT><A ...>...</A> in the source HTML, used by
+  // --fix to splice out specific entries without re-serializing the file.
+  matchIndex: number;
+  matchLength: number;
 }
 
 const NAMED_ENTITIES: Record<string, string> = {
@@ -32,7 +36,10 @@ function decodeEntities(text: string): string {
 // folder's children, closed by a matching </DL>. It is not valid XML/HTML
 // (tags are often unclosed, e.g. <DT>, <p>), so a real HTML parser buys
 // nothing here - a token scan over the handful of tags we care about does.
-const TOKEN = /<H3\b[^>]*>([\s\S]*?)<\/H3>|<A\s+([^>]*)>([\s\S]*?)<\/A>|<DL>|<\/DL>/gi;
+// The optional leading <DT> is folded into the same alternative as the <A>
+// so that match.index/match[0].length cover the whole entry (DT included) -
+// that's the span --fix needs to remove to clean an entry out of the file.
+const TOKEN = /<H3\b[^>]*>([\s\S]*?)<\/H3>|(?:<DT>\s*)?<A\s+([^>]*)>([\s\S]*?)<\/A>|<DL>|<\/DL>/gi;
 
 export function parseBookmarksHtml(html: string): BookmarkEntry[] {
   const entries: BookmarkEntry[] = [];
@@ -56,6 +63,9 @@ export function parseBookmarksHtml(html: string): BookmarkEntry[] {
         url: decodeEntities(hrefMatch[1]),
         folder: folderStack.join("/"),
         addDate: addDateMatch ? Number(addDateMatch[1]) : undefined,
+        // matchAll always sets index; the type just doesn't say so.
+        matchIndex: match.index as number,
+        matchLength: whole.length,
       });
       continue;
     }
