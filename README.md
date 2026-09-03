@@ -37,6 +37,12 @@ http://example.com/docs  (3x)
   - "Docs" in Work/Reference (https://example.com/docs)
   - "Example Docs" in Work/Reference/Old (https://example.com/docs/?utm_source=newsletter)
   - "docs" in (root) (http://example.com/docs)
+
+1 group of possible near-duplicates (similar titles, different URLs):
+
+(2x)
+  - "Weekly Newsletter Archive" in Reading (https://example.com/newsletter/archive)
+  - "Weekly Newsletter Archive" in Reading/Old (https://example.com/newsletter-archive)
 ```
 
 URLs are compared after normalizing: `http` and `https` are treated as the
@@ -72,6 +78,24 @@ node src/cli.ts ~/Downloads/bookmarks.html --json
 The JSON mode is meant to be piped into something else - `jq`, a script that
 deletes the older duplicates, whatever. It's a straight mirror of the human
 output, no extra or missing fields.
+
+### Near-duplicates
+
+Some duplicate bookmarks don't share a URL at all - a link shortener, a
+redirect, a query string that isn't a known tracking param. These can't be
+caught by normalizing the URL, so instead this compares titles: if two
+bookmarks have different URLs but most of the same words in their title, they
+show up in a separate "possible near-duplicates" group, both in the text
+output and as a `nearDuplicates` array in `--json`. This is a heuristic, not
+a guarantee - it depends entirely on the two bookmarks having been saved with
+similar titles, and browsers pull the title from the page at save time, so
+two saves of the same page usually do end up with the same or close titles.
+It won't catch a page saved once as "Hacker News" and again as "HN".
+
+Near-duplicates are report-only. `--fix` never removes anything based on a
+title match, only on an exact normalized URL match, because there's no safe
+way to guess which of two differently-URLed bookmarks is the one worth
+keeping.
 
 ### Removing the duplicates
 
@@ -114,10 +138,9 @@ which is more honest about how loose the format actually is.
 
 ## What this does not do (yet)
 
-- No near-duplicate detection by title similarity (same page, different URL
-  entirely - a redirect, a URL shortener, a different query string that
-  isn't a known tracking param).
 - No way to choose which duplicate to keep other than "first in the file";
   no option to prefer the one with the more specific folder, say.
+- No way to point it at more than one export file and merge the results,
+  which matters if you use more than one browser.
 
 See the license for warranty (there isn't one).
