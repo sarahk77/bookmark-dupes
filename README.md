@@ -129,6 +129,18 @@ node --experimental-strip-types src/cli.ts bookmarks.html
 
 No dependencies, nothing to install.
 
+## Tests
+
+```
+npm test
+```
+
+Runs the built-in Node test runner (`node:test`) against `test/`. The parser
+tests use trimmed-down Chrome- and Firefox-shaped exports (nested folders,
+unclosed `<DT>` tags, extra attributes browsers stick on `<A>`, HTML
+entities) rather than a single happy-path fixture, since those are the
+places a token-based parser is most likely to break.
+
 ## Notes on the format
 
 The bookmark file isn't valid HTML or XML - tags like `<DT>` are never
@@ -142,5 +154,7 @@ which is more honest about how loose the format actually is.
   no option to prefer the one with the more specific folder, say.
 - No way to point it at more than one export file and merge the results,
   which matters if you use more than one browser.
+- No test coverage yet for `normalize.ts` or `similarity.ts`, only the
+  token parser.
 
 See the license for warranty (there isn't one).
