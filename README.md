@@ -154,7 +154,5 @@ which is more honest about how loose the format actually is.
   no option to prefer the one with the more specific folder, say.
 - No way to point it at more than one export file and merge the results,
   which matters if you use more than one browser.
-- No test coverage yet for `normalize.ts` or `similarity.ts`, only the
-  token parser.
 
 See the license for warranty (there isn't one).
