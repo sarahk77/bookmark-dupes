@@ -1,9 +1,19 @@
 import { parseArgs } from "node:util";
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, basename } from "node:path";
 import { parseBookmarksHtml, type BookmarkEntry } from "./parser.js";
 import { normalizeUrl } from "./normalize.js";
 import { titleSimilarity } from "./similarity.js";
+
+// An entry tagged with which input file it came from and its position in
+// the overall merge order. `seq` (not matchIndex, which is only meaningful
+// within its own file's HTML text) is what group ordering and --fix's
+// "keep the first occurrence" rule are based on once more than one file is
+// involved.
+interface SourcedEntry extends BookmarkEntry {
+  source: string;
+  seq: number;
+}
 
 // Jaccard similarity of title word sets, chosen by hand-checking it against
 // a handful of real duplicate/non-duplicate title pairs: high enough that
@@ -11,19 +21,26 @@ import { titleSimilarity } from "./similarity.js";
 // reordered or lightly-edited titles still do.
 const NEAR_DUPLICATE_THRESHOLD = 0.7;
 
+interface ReportedEntry {
+  title: string;
+  folder: string;
+  url: string;
+  source?: string;
+}
+
 interface DuplicateGroup {
   url: string;
   count: number;
-  entries: { title: string; folder: string; url: string }[];
+  entries: ReportedEntry[];
 }
 
 interface NearDuplicateGroup {
   count: number;
-  entries: { title: string; folder: string; url: string }[];
+  entries: ReportedEntry[];
 }
 
-function groupByNormalizedUrl(entries: BookmarkEntry[]): Map<string, BookmarkEntry[]> {
-  const byNormalizedUrl = new Map<string, BookmarkEntry[]>();
+function groupByNormalizedUrl(entries: SourcedEntry[]): Map<string, SourcedEntry[]> {
+  const byNormalizedUrl = new Map<string, SourcedEntry[]>();
   for (const entry of entries) {
     const key = normalizeUrl(entry.url);
     const list = byNormalizedUrl.get(key);
@@ -33,14 +50,19 @@ function groupByNormalizedUrl(entries: BookmarkEntry[]): Map<string, BookmarkEnt
   return byNormalizedUrl;
 }
 
-function findDuplicateUrls(byNormalizedUrl: Map<string, BookmarkEntry[]>): DuplicateGroup[] {
+function findDuplicateUrls(byNormalizedUrl: Map<string, SourcedEntry[]>, includeSource: boolean): DuplicateGroup[] {
   const groups: DuplicateGroup[] = [];
   for (const [url, list] of byNormalizedUrl) {
     if (list.length < 2) continue;
     groups.push({
       url,
       count: list.length,
-      entries: list.map((e) => ({ title: e.title, folder: e.folder || "(root)", url: e.url })),
+      entries: list.map((e) => ({
+        title: e.title,
+        folder: e.folder || "(root)",
+        url: e.url,
+        ...(includeSource ? { source: e.source } : {}),
+      })),
     });
   }
 
@@ -53,10 +75,13 @@ function findDuplicateUrls(byNormalizedUrl: Map<string, BookmarkEntry[]>): Dupli
 // appears first in the file - rather than every entry. That also keeps the
 // pairwise comparison down to one per distinct URL instead of one per
 // bookmark, which matters once a URL has been saved a dozen times.
-function findNearDuplicateTitles(byNormalizedUrl: Map<string, BookmarkEntry[]>): NearDuplicateGroup[] {
-  const representatives: BookmarkEntry[] = [];
+function findNearDuplicateTitles(
+  byNormalizedUrl: Map<string, SourcedEntry[]>,
+  includeSource: boolean,
+): NearDuplicateGroup[] {
+  const representatives: SourcedEntry[] = [];
   for (const list of byNormalizedUrl.values()) {
-    const first = [...list].sort((a, b) => a.matchIndex - b.matchIndex)[0];
+    const first = [...list].sort((a, b) => a.seq - b.seq)[0];
     if (first.title.trim().length > 0) representatives.push(first);
   }
 
@@ -85,7 +110,7 @@ function findNearDuplicateTitles(byNormalizedUrl: Map<string, BookmarkEntry[]>):
     }
   }
 
-  const clusters = new Map<number, BookmarkEntry[]>();
+  const clusters = new Map<number, SourcedEntry[]>();
   for (let i = 0; i < representatives.length; i++) {
     const root = find(i);
     const list = clusters.get(root);
@@ -99,8 +124,13 @@ function findNearDuplicateTitles(byNormalizedUrl: Map<string, BookmarkEntry[]>):
     groups.push({
       count: list.length,
       entries: list
-        .sort((a, b) => a.matchIndex - b.matchIndex)
-        .map((e) => ({ title: e.title, folder: e.folder || "(root)", url: e.url })),
+        .sort((a, b) => a.seq - b.seq)
+        .map((e) => ({
+          title: e.title,
+          folder: e.folder || "(root)",
+          url: e.url,
+          ...(includeSource ? { source: e.source } : {}),
+        })),
     });
   }
 
@@ -112,7 +142,7 @@ function findNearDuplicateTitles(byNormalizedUrl: Map<string, BookmarkEntry[]>):
 // along with their line's leading indentation and trailing newline, so the
 // result reads like a file that never had those entries rather than one with
 // blank lines punched out of it.
-function removeEntries(html: string, toRemove: BookmarkEntry[]): string {
+function removeEntries(html: string, toRemove: SourcedEntry[]): string {
   const ranges = toRemove
     .map((entry) => {
       let start = entry.matchIndex;
@@ -133,18 +163,29 @@ function removeEntries(html: string, toRemove: BookmarkEntry[]): string {
 
 // Duplicates within a group are kept in file order; everything after the
 // first occurrence is considered removable by --fix.
-function pickRemovable(byNormalizedUrl: Map<string, BookmarkEntry[]>): BookmarkEntry[] {
-  const removable: BookmarkEntry[] = [];
+function pickRemovable(byNormalizedUrl: Map<string, SourcedEntry[]>): SourcedEntry[] {
+  const removable: SourcedEntry[] = [];
   for (const list of byNormalizedUrl.values()) {
     if (list.length < 2) continue;
-    const byPosition = [...list].sort((a, b) => a.matchIndex - b.matchIndex);
+    const byPosition = [...list].sort((a, b) => a.seq - b.seq);
     removable.push(...byPosition.slice(1));
   }
   return removable;
 }
 
-function printHuman(total: number, duplicates: DuplicateGroup[], nearDuplicates: NearDuplicateGroup[]): void {
-  console.log(`scanned ${total} bookmark${total === 1 ? "" : "s"}`);
+function formatEntry(entry: ReportedEntry): string {
+  const sourceTag = entry.source ? ` [${basename(entry.source)}]` : "";
+  return `  - "${entry.title}" in ${entry.folder} (${entry.url})${sourceTag}`;
+}
+
+function printHuman(
+  total: number,
+  fileCount: number,
+  duplicates: DuplicateGroup[],
+  nearDuplicates: NearDuplicateGroup[],
+): void {
+  const scope = fileCount > 1 ? ` across ${fileCount} files` : "";
+  console.log(`scanned ${total} bookmark${total === 1 ? "" : "s"}${scope}`);
 
   if (duplicates.length === 0) {
     console.log("no duplicate URLs found");
@@ -153,7 +194,7 @@ function printHuman(total: number, duplicates: DuplicateGroup[], nearDuplicates:
     for (const group of duplicates) {
       console.log(`${group.url}  (${group.count}x)`);
       for (const entry of group.entries) {
-        console.log(`  - "${entry.title}" in ${entry.folder} (${entry.url})`);
+        console.log(formatEntry(entry));
       }
       console.log("");
     }
@@ -166,7 +207,7 @@ function printHuman(total: number, duplicates: DuplicateGroup[], nearDuplicates:
     for (const group of nearDuplicates) {
       console.log(`(${group.count}x)`);
       for (const entry of group.entries) {
-        console.log(`  - "${entry.title}" in ${entry.folder} (${entry.url})`);
+        console.log(formatEntry(entry));
       }
       console.log("");
     }
@@ -174,14 +215,17 @@ function printHuman(total: number, duplicates: DuplicateGroup[], nearDuplicates:
 }
 
 function printUsage(): void {
-  console.error("usage: bookmark-dupes <export.html> [--json] [--fix <output.html>]");
+  console.error("usage: bookmark-dupes <export.html> [<export2.html> ...] [--json] [--fix <output.html>]");
   console.error("");
   console.error("  export.html    a bookmarks file in the Netscape Bookmark format");
   console.error("                 (File > Export Bookmarks, in Chrome, Firefox, or Safari)");
+  console.error("                 pass more than one to merge them before reporting -");
+  console.error("                 e.g. one export per browser you use");
   console.error("  --json         print a machine-readable report instead of text");
   console.error("  --fix <path>   write a copy of export.html to <path> with every");
   console.error("                 duplicate URL's later entries removed, keeping the");
-  console.error("                 first occurrence of each");
+  console.error("                 first occurrence of each; only supported with a");
+  console.error("                 single input file");
   console.error("");
   console.error("  Also reports groups of bookmarks with different URLs but similar");
   console.error("  titles, as a hint they may be the same page saved twice. These are");
@@ -204,22 +248,39 @@ function main(): void {
     return;
   }
 
-  const filePath = positionals[0];
-  let html: string;
-  try {
-    html = readFileSync(filePath, "utf8");
-  } catch (err) {
-    console.error(`could not read ${filePath}: ${(err as Error).message}`);
-    process.exitCode = 1;
-    return;
+  const filePaths = positionals;
+  const htmlByFile = new Map<string, string>();
+  const entries: SourcedEntry[] = [];
+  let seq = 0;
+  for (const filePath of filePaths) {
+    let html: string;
+    try {
+      html = readFileSync(filePath, "utf8");
+    } catch (err) {
+      console.error(`could not read ${filePath}: ${(err as Error).message}`);
+      process.exitCode = 1;
+      return;
+    }
+    htmlByFile.set(filePath, html);
+    for (const entry of parseBookmarksHtml(html)) {
+      entries.push({ ...entry, source: filePath, seq: seq++ });
+    }
   }
 
-  const entries = parseBookmarksHtml(html);
+  const includeSource = filePaths.length > 1;
   const byNormalizedUrl = groupByNormalizedUrl(entries);
-  const duplicates = findDuplicateUrls(byNormalizedUrl);
-  const nearDuplicates = findNearDuplicateTitles(byNormalizedUrl);
+  const duplicates = findDuplicateUrls(byNormalizedUrl, includeSource);
+  const nearDuplicates = findNearDuplicateTitles(byNormalizedUrl, includeSource);
 
   if (values.fix !== undefined) {
+    if (filePaths.length > 1) {
+      console.error("--fix supports only a single input file at a time");
+      process.exitCode = 1;
+      return;
+    }
+    const filePath = filePaths[0];
+    const html = htmlByFile.get(filePath) as string;
+
     if (resolve(values.fix) === resolve(filePath)) {
       console.error("--fix path must be different from the input file, refusing to overwrite it");
       process.exitCode = 1;
@@ -271,6 +332,7 @@ function main(): void {
       JSON.stringify(
         {
           totalBookmarks: entries.length,
+          ...(includeSource ? { sourceFiles: filePaths } : {}),
           duplicateUrlCount: duplicates.length,
           duplicates,
           nearDuplicates,
@@ -282,7 +344,7 @@ function main(): void {
     return;
   }
 
-  printHuman(entries.length, duplicates, nearDuplicates);
+  printHuman(entries.length, filePaths.length, duplicates, nearDuplicates);
 }
 
 main();

@@ -118,6 +118,27 @@ add dates, and any browser-specific attributes on the surviving entries come
 through untouched. `--fix` combined with `--json` prints the usual report
 plus `fixedFile` and `removedCount`.
 
+### Multiple export files
+
+If you use more than one browser, pass every export on the command line and
+they're merged before reporting:
+
+```
+node src/cli.ts chrome.html firefox.html
+```
+
+Duplicates are found across the merged set, so a URL saved once in each
+browser's export shows up as a 2x duplicate. Once more than one file is
+given, each entry in the report is tagged with the file it came from - a
+`[chrome.html]` suffix in text output, a `"source"` field per entry in
+`--json`. With a single file, nothing changes: no source tag, no `source`
+field, same output as before.
+
+`--fix` only accepts one input file at a time - merging duplicates across
+files means the "first occurrence" it would keep depends on the order the
+files were listed, which is more surprising than useful for something that
+deletes bookmarks. Fix each export separately instead.
+
 ## Requirements
 
 Node 22.6 or later, run with type stripping enabled (Node 23.6+ has this on
@@ -152,7 +173,5 @@ which is more honest about how loose the format actually is.
 
 - No way to choose which duplicate to keep other than "first in the file";
   no option to prefer the one with the more specific folder, say.
-- No way to point it at more than one export file and merge the results,
-  which matters if you use more than one browser.
 
 See the license for warranty (there isn't one).
