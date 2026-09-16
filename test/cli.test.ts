@@ -81,6 +81,61 @@ test("--fix refuses to write to the same path it read from", () => {
   assert.match(stderr, /refusing to overwrite/);
 });
 
+test("--prefer-folder keeps the matching entry instead of the first occurrence", () => {
+  const filePath = join(dir, "folders.html");
+  const outPath = join(dir, "folders.fixed.html");
+  writeFileSync(
+    filePath,
+    `<DL><p>
+    <DT><A HREF="https://example.com/docs">Docs root</A>
+    <DT><H3>Work</H3>
+    <DL><p>
+        <DT><H3>Reference</H3>
+        <DL><p>
+            <DT><A HREF="https://example.com/docs/">Docs reference</A>
+        </DL><p>
+    </DL><p>
+</DL><p>
+`,
+  );
+
+  const { status, stdout } = runCli([filePath, "--fix", outPath, "--prefer-folder", "Reference"]);
+  assert.equal(status, 0);
+  assert.match(stdout, /removed 1 duplicate entry/);
+
+  const cleaned = readFileSync(outPath, "utf8");
+  assert.match(cleaned, /Docs reference<\/A>/);
+  assert.doesNotMatch(cleaned, /Docs root/);
+});
+
+test("--prefer-folder falls back to file order when nothing matches", () => {
+  const filePath = join(dir, "folders-nomatch.html");
+  const outPath = join(dir, "folders-nomatch.fixed.html");
+  writeFileSync(
+    filePath,
+    bookmarksHtml([
+      { href: "https://example.com/docs", title: "Docs" },
+      { href: "https://example.com/docs/", title: "Docs again" },
+    ]),
+  );
+
+  const { status } = runCli([filePath, "--fix", outPath, "--prefer-folder", "Nonexistent"]);
+  assert.equal(status, 0);
+
+  const cleaned = readFileSync(outPath, "utf8");
+  assert.match(cleaned, /Docs<\/A>/);
+  assert.doesNotMatch(cleaned, /Docs again/);
+});
+
+test("--prefer-folder without --fix is rejected", () => {
+  const filePath = join(dir, "prefer-no-fix.html");
+  writeFileSync(filePath, bookmarksHtml([{ href: "https://example.com/", title: "Example" }]));
+
+  const { status, stderr } = runCli([filePath, "--prefer-folder", "Reference"]);
+  assert.equal(status, 1);
+  assert.match(stderr, /--prefer-folder only has an effect together with --fix/);
+});
+
 test("--fix removes later duplicates and keeps the first occurrence", () => {
   const filePath = join(dir, "dupes.html");
   const outPath = join(dir, "dupes.fixed.html");

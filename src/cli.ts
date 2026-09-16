@@ -161,14 +161,19 @@ function removeEntries(html: string, toRemove: SourcedEntry[]): string {
   return result;
 }
 
-// Duplicates within a group are kept in file order; everything after the
-// first occurrence is considered removable by --fix.
-function pickRemovable(byNormalizedUrl: Map<string, SourcedEntry[]>): SourcedEntry[] {
+// Duplicates within a group are kept in file order by default; everything
+// after the first occurrence is considered removable by --fix. When
+// preferFolder is given, the kept entry is instead the first (in file order)
+// whose folder path contains that string, falling back to file order if no
+// entry in the group matches.
+function pickRemovable(byNormalizedUrl: Map<string, SourcedEntry[]>, preferFolder?: string): SourcedEntry[] {
+  const needle = preferFolder?.toLowerCase();
   const removable: SourcedEntry[] = [];
   for (const list of byNormalizedUrl.values()) {
     if (list.length < 2) continue;
     const byPosition = [...list].sort((a, b) => a.seq - b.seq);
-    removable.push(...byPosition.slice(1));
+    const keeper = needle ? (byPosition.find((e) => e.folder.toLowerCase().includes(needle)) ?? byPosition[0]) : byPosition[0];
+    removable.push(...byPosition.filter((e) => e !== keeper));
   }
   return removable;
 }
@@ -215,7 +220,9 @@ function printHuman(
 }
 
 function printUsage(): void {
-  console.error("usage: bookmark-dupes <export.html> [<export2.html> ...] [--json] [--fix <output.html>]");
+  console.error(
+    "usage: bookmark-dupes <export.html> [<export2.html> ...] [--json] [--fix <output.html>] [--prefer-folder <name>]",
+  );
   console.error("");
   console.error("  export.html    a bookmarks file in the Netscape Bookmark format");
   console.error("                 (File > Export Bookmarks, in Chrome, Firefox, or Safari)");
@@ -226,6 +233,10 @@ function printUsage(): void {
   console.error("                 duplicate URL's later entries removed, keeping the");
   console.error("                 first occurrence of each; only supported with a");
   console.error("                 single input file");
+  console.error("  --prefer-folder <name>");
+  console.error("                 with --fix, keep the entry whose folder path contains");
+  console.error("                 <name> (case-insensitive) instead of the first");
+  console.error("                 occurrence, for URLs where a matching entry exists");
   console.error("");
   console.error("  Also reports groups of bookmarks with different URLs but similar");
   console.error("  titles, as a hint they may be the same page saved twice. These are");
@@ -238,6 +249,7 @@ function main(): void {
       json: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
       fix: { type: "string" },
+      "prefer-folder": { type: "string" },
     },
     allowPositionals: true,
   });
@@ -272,6 +284,12 @@ function main(): void {
   const duplicates = findDuplicateUrls(byNormalizedUrl, includeSource);
   const nearDuplicates = findNearDuplicateTitles(byNormalizedUrl, includeSource);
 
+  if (values["prefer-folder"] !== undefined && values.fix === undefined) {
+    console.error("--prefer-folder only has an effect together with --fix");
+    process.exitCode = 1;
+    return;
+  }
+
   if (values.fix !== undefined) {
     if (filePaths.length > 1) {
       console.error("--fix supports only a single input file at a time");
@@ -287,7 +305,7 @@ function main(): void {
       return;
     }
 
-    const removable = pickRemovable(byNormalizedUrl);
+    const removable = pickRemovable(byNormalizedUrl, values["prefer-folder"]);
     const cleaned = removeEntries(html, removable);
     try {
       writeFileSync(values.fix, cleaned, "utf8");

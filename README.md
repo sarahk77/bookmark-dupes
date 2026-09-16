@@ -118,6 +118,19 @@ add dates, and any browser-specific attributes on the surviving entries come
 through untouched. `--fix` combined with `--json` prints the usual report
 plus `fixedFile` and `removedCount`.
 
+If "first in the file" isn't the entry worth keeping - my most-organized
+folder usually isn't where I saved a bookmark first - pass `--prefer-folder`:
+
+```
+node src/cli.ts bookmarks.html --fix cleaned.html --prefer-folder "Reference"
+```
+
+For each duplicated URL, this keeps the first entry (in file order) whose
+folder path contains "Reference" (case-insensitive, so it matches
+`Work/Reference` and `Work/Reference/Old` alike) instead of the first entry
+overall. URLs where no entry's folder matches fall back to the normal
+first-in-file rule. `--prefer-folder` only makes sense alongside `--fix`.
+
 ### Multiple export files
 
 If you use more than one browser, pass every export on the command line and
@@ -171,7 +184,10 @@ which is more honest about how loose the format actually is.
 
 ## What this does not do (yet)
 
-- No way to choose which duplicate to keep other than "first in the file";
-  no option to prefer the one with the more specific folder, say.
+- `--prefer-folder` matches by substring against the whole folder path, not a
+  specific depth or an exact folder name, so a broad string like "Old" can
+  match more folders than intended.
+- No way to prefer a specific source file when merging multiple exports,
+  since `--fix` only ever operates on one input file.
 
 See the license for warranty (there isn't one).
