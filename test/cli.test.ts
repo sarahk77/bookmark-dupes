@@ -127,6 +127,66 @@ test("--prefer-folder falls back to file order when nothing matches", () => {
   assert.doesNotMatch(cleaned, /Docs again/);
 });
 
+test("--prefer-folder matches a whole segment, not a substring of one", () => {
+  const filePath = join(dir, "folders-substring.html");
+  const outPath = join(dir, "folders-substring.fixed.html");
+  writeFileSync(
+    filePath,
+    `<DL><p>
+    <DT><H3>OldReference</H3>
+    <DL><p>
+        <DT><A HREF="https://example.com/docs">Docs in OldReference</A>
+    </DL><p>
+    <DT><H3>Old</H3>
+    <DL><p>
+        <DT><A HREF="https://example.com/docs/">Docs in Old</A>
+    </DL><p>
+</DL><p>
+`,
+  );
+
+  const { status, stdout } = runCli([filePath, "--fix", outPath, "--prefer-folder", "Old"]);
+  assert.equal(status, 0);
+  assert.match(stdout, /removed 1 duplicate entry/);
+
+  const cleaned = readFileSync(outPath, "utf8");
+  assert.match(cleaned, /Docs in Old<\/A>/);
+  assert.doesNotMatch(cleaned, /Docs in OldReference/);
+});
+
+test("--prefer-folder accepts a multi-segment path to require an exact subpath", () => {
+  const filePath = join(dir, "folders-subpath.html");
+  const outPath = join(dir, "folders-subpath.fixed.html");
+  writeFileSync(
+    filePath,
+    `<DL><p>
+    <DT><H3>Personal</H3>
+    <DL><p>
+        <DT><H3>Reference</H3>
+        <DL><p>
+            <DT><A HREF="https://example.com/docs">Docs in Personal/Reference</A>
+        </DL><p>
+    </DL><p>
+    <DT><H3>Work</H3>
+    <DL><p>
+        <DT><H3>Reference</H3>
+        <DL><p>
+            <DT><A HREF="https://example.com/docs/">Docs in Work/Reference</A>
+        </DL><p>
+    </DL><p>
+</DL><p>
+`,
+  );
+
+  const { status, stdout } = runCli([filePath, "--fix", outPath, "--prefer-folder", "Work/Reference"]);
+  assert.equal(status, 0);
+  assert.match(stdout, /removed 1 duplicate entry/);
+
+  const cleaned = readFileSync(outPath, "utf8");
+  assert.match(cleaned, /Docs in Work\/Reference<\/A>/);
+  assert.doesNotMatch(cleaned, /Docs in Personal\/Reference/);
+});
+
 test("--prefer-folder without --fix is rejected", () => {
   const filePath = join(dir, "prefer-no-fix.html");
   writeFileSync(filePath, bookmarksHtml([{ href: "https://example.com/", title: "Example" }]));

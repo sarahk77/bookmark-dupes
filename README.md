@@ -126,10 +126,18 @@ node src/cli.ts bookmarks.html --fix cleaned.html --prefer-folder "Reference"
 ```
 
 For each duplicated URL, this keeps the first entry (in file order) whose
-folder path contains "Reference" (case-insensitive, so it matches
-`Work/Reference` and `Work/Reference/Old` alike) instead of the first entry
-overall. URLs where no entry's folder matches fall back to the normal
-first-in-file rule. `--prefer-folder` only makes sense alongside `--fix`.
+folder path has a segment matching "Reference" (case-insensitive, so it
+matches `Work/Reference` and `Work/Reference/Old` alike, but not
+`Work/OldReference`) instead of the first entry overall. URLs where no
+entry's folder matches fall back to the normal first-in-file rule.
+
+The match is by whole path segment, not substring, so a short name like
+"Old" only matches a folder actually named "Old", not one that happens to
+contain those letters. Pass a multi-segment path instead of a single name -
+`--prefer-folder "Work/Reference"` - to require that exact subpath, in case
+more than one folder in the tree shares the same leaf name.
+
+`--prefer-folder` only makes sense alongside `--fix`.
 
 ### Multiple export files
 
@@ -184,9 +192,6 @@ which is more honest about how loose the format actually is.
 
 ## What this does not do (yet)
 
-- `--prefer-folder` matches by substring against the whole folder path, not a
-  specific depth or an exact folder name, so a broad string like "Old" can
-  match more folders than intended.
 - No way to prefer a specific source file when merging multiple exports,
   since `--fix` only ever operates on one input file.
 

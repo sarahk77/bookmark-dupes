@@ -161,18 +161,39 @@ function removeEntries(html: string, toRemove: SourcedEntry[]): string {
   return result;
 }
 
+function folderSegments(folder: string): string[] {
+  return folder.split("/").filter((segment) => segment.length > 0);
+}
+
+// True if preferFolder's segments appear as a contiguous run within folder's
+// segments, each compared whole (case-insensitive), not as a substring of a
+// single segment. So "Reference" matches "Work/Reference" and
+// "Work/Reference/Old" but not "Work/OldReference", and a multi-segment
+// preference like "Work/Reference" requires that exact subpath rather than
+// either name appearing anywhere.
+function matchesFolderPreference(folder: string, preferFolder: string): boolean {
+  const wanted = folderSegments(preferFolder).map((segment) => segment.toLowerCase());
+  if (wanted.length === 0) return false;
+  const actual = folderSegments(folder).map((segment) => segment.toLowerCase());
+  for (let start = 0; start + wanted.length <= actual.length; start++) {
+    if (wanted.every((segment, i) => actual[start + i] === segment)) return true;
+  }
+  return false;
+}
+
 // Duplicates within a group are kept in file order by default; everything
 // after the first occurrence is considered removable by --fix. When
 // preferFolder is given, the kept entry is instead the first (in file order)
-// whose folder path contains that string, falling back to file order if no
-// entry in the group matches.
+// whose folder path has a matching segment (see matchesFolderPreference),
+// falling back to file order if no entry in the group matches.
 function pickRemovable(byNormalizedUrl: Map<string, SourcedEntry[]>, preferFolder?: string): SourcedEntry[] {
-  const needle = preferFolder?.toLowerCase();
   const removable: SourcedEntry[] = [];
   for (const list of byNormalizedUrl.values()) {
     if (list.length < 2) continue;
     const byPosition = [...list].sort((a, b) => a.seq - b.seq);
-    const keeper = needle ? (byPosition.find((e) => e.folder.toLowerCase().includes(needle)) ?? byPosition[0]) : byPosition[0];
+    const keeper = preferFolder
+      ? (byPosition.find((e) => matchesFolderPreference(e.folder, preferFolder)) ?? byPosition[0])
+      : byPosition[0];
     removable.push(...byPosition.filter((e) => e !== keeper));
   }
   return removable;
@@ -234,9 +255,11 @@ function printUsage(): void {
   console.error("                 first occurrence of each; only supported with a");
   console.error("                 single input file");
   console.error("  --prefer-folder <name>");
-  console.error("                 with --fix, keep the entry whose folder path contains");
-  console.error("                 <name> (case-insensitive) instead of the first");
-  console.error("                 occurrence, for URLs where a matching entry exists");
+  console.error("                 with --fix, keep the entry whose folder path has a");
+  console.error("                 segment matching <name> (case-insensitive) instead of");
+  console.error("                 the first occurrence, for URLs where a matching entry");
+  console.error("                 exists; <name> may itself be a path like \"Work/Docs\"");
+  console.error("                 to require that exact subpath");
   console.error("");
   console.error("  Also reports groups of bookmarks with different URLs but similar");
   console.error("  titles, as a hint they may be the same page saved twice. These are");
